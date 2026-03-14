@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🚦 AUTOMATED TRAFFIC SIGNAL SIMULATION
 
 An AI-powered traffic management system using YOLOv8 for real-time vehicle detection and intelligent signal timing optimization.
@@ -337,3 +338,6 @@ We welcome contributions! Areas for improvement:
 **Made with ❤️ for smarter cities**
 
 🚦 Happy Traffic Managing! 🚦
+=======
+# AI-Driven-Adaptive-Traffic-Signal-Control
+>>>>>>> 0be246247de2f93a07b7b3daf60f44b220f0ae6f
