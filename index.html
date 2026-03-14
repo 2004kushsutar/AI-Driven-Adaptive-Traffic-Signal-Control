@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Traffic Control System - Predictive Mode</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body class="bg-gray-900 text-white min-h-screen p-4">
+    <!-- Header -->
+    <header class="text-center mb-6">
+      <div class="flex items-center justify-center gap-3 mb-2">
+        <div class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
+        <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">
+          Smart Traffic Control System
+        </h1>
+      </div>
+      <p class="text-gray-400">AI-Powered Predictive Traffic Management • Real-time Vehicle Detection</p>
+      <div class="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-purple-500/20 border border-purple-500/50 rounded-lg">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span class="text-sm font-semibold text-purple-300">Predictive Mode: Snapshot 3s before green ends</span>
+      </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto">
+      <!-- Main Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Traffic Intersection (Left/Center) -->
+        <div class="lg:col-span-2">
+          <div class="bg-gray-800 rounded-2xl p-6 shadow-2xl border border-gray-700">
+            <div class="flex justify-between items-center mb-4">
+              <h2 class="text-xl font-semibold text-blue-300">Intersection View</h2>
+              <div class="flex gap-2">
+                <span id="connection-status" class="px-3 py-1 bg-gray-500 text-white rounded-lg text-sm font-medium">Connecting...</span>
+                <span id="current-phase" class="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-lg text-sm font-medium">Initializing...</span>
+              </div>
+            </div>
+
+            <!-- Intersection Grid -->
+            <div class="relative w-full aspect-square max-w-2xl mx-auto bg-gray-800 rounded-xl overflow-hidden shadow-2xl border-4 border-gray-700">
+              <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 h-full w-full">
+                <!-- Corner blocks -->
+                <div class="bg-gray-800 border-r border-b border-gray-600/30"></div>
+                
+                <!-- North Road -->
+                <div class="relative bg-gray-600 border-x-2 border-dashed border-yellow-400/30">
+                  <div class="absolute top-2 w-full flex justify-center">
+                    <span id="north-road-count" class="road-label">0 🚗</span>
+                  </div>
+                </div>
+                
+                <div class="bg-gray-800 border-l border-b border-gray-600/30"></div>
+
+                <!-- West Road -->
+                <div class="relative bg-gray-600 border-y-2 border-dashed border-yellow-400/30">
+                  <div class="absolute left-2 h-full flex items-center">
+                    <span id="west-road-count" class="road-label">0 🚗</span>
+                  </div>
+                </div>
+
+                <!-- Center Intersection -->
+                <div class="relative bg-gray-700 flex items-center justify-center z-10">
+                  <div class="absolute inset-3 border-4 border-dashed border-yellow-400/40 rounded"></div>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="text-gray-500 opacity-40 z-20"
+                  >
+                    <rect x="2" y="2" width="20" height="20" rx="2" />
+                    <path d="M2 12h20" />
+                    <path d="M12 2v20" />
+                  </svg>
+                </div>
+
+                <!-- East Road -->
+                <div class="relative bg-gray-600 border-y-2 border-dashed border-yellow-400/30">
+                  <div class="absolute right-2 h-full flex items-center">
+                    <span id="east-road-count" class="road-label">0 🚗</span>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800 border-r border-t border-gray-600/30"></div>
+
+                <!-- South Road -->
+                <div class="relative bg-gray-600 border-x-2 border-dashed border-yellow-400/30">
+                  <div class="absolute bottom-2 w-full flex justify-center">
+                    <span id="south-road-count" class="road-label">0 🚗</span>
+                  </div>
+                </div>
+
+                <div class="bg-gray-800 border-l border-t border-gray-600/30"></div>
+              </div>
+
+              <!-- Traffic Lights Overlay -->
+              <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none z-30">
+                <!-- North Light -->
+                <div class="col-start-2 row-start-1 flex items-end justify-center pb-2 space-x-2">
+                  <div id="north-timer" class="timer" style="display: none"></div>
+                  <div id="north-light" class="traffic-light-post horizontal flex space-x-1.5 scale-75 origin-bottom">
+                    <div class="light red" data-color="red"></div>
+                    <div class="light yellow" data-color="yellow"></div>
+                    <div class="light green" data-color="green"></div>
+                  </div>
+                </div>
+
+                <!-- West Light -->
+                <div class="col-start-1 row-start-2 flex flex-col items-end justify-center pr-2 space-y-1">
+                  <div id="west-timer" class="timer" style="display: none"></div>
+                  <div id="west-light" class="traffic-light-post flex flex-col space-y-1.5 scale-75 origin-right">
+                    <div class="light red" data-color="red"></div>
+                    <div class="light yellow" data-color="yellow"></div>
+                    <div class="light green" data-color="green"></div>
+                  </div>
+                </div>
+
+                <div></div>
+
+                <!-- East Light -->
+                <div class="col-start-3 row-start-2 flex flex-col items-start justify-center pl-2 space-y-1">
+                  <div id="east-timer" class="timer" style="display: none"></div>
+                  <div id="east-light" class="traffic-light-post flex flex-col space-y-1.5 scale-75 origin-left">
+                    <div class="light red" data-color="red"></div>
+                    <div class="light yellow" data-color="yellow"></div>
+                    <div class="light green" data-color="green"></div>
+                  </div>
+                </div>
+
+                <!-- South Light -->
+                <div class="col-start-2 row-start-3 flex items-start justify-center pt-2 space-x-2">
+                  <div id="south-timer" class="timer" style="display: none"></div>
+                  <div id="south-light" class="traffic-light-post horizontal flex space-x-1.5 scale-75 origin-top">
+                    <div class="light red" data-color="red"></div>
+                    <div class="light yellow" data-color="yellow"></div>
+                    <div class="light green" data-color="green"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="mt-4 flex justify-center gap-4 text-sm text-gray-400">
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                <span>Green: Go</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                <span>Yellow: Caution</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                <span>Red: Stop</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="space-y-6">
+          
+          <!-- Traffic Volume Panel -->
+          <div class="bg-gray-800 rounded-2xl p-6 shadow-2xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 20V10"/>
+                <path d="M12 20V4"/>
+                <path d="M6 20v-6"/>
+              </svg>
+              Live Traffic Volume
+            </h2>
+            
+            <div class="space-y-4">
+              <!-- North -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm font-medium text-gray-300">North</span>
+                  <div class="flex items-center gap-2">
+                    <span id="north-value" class="text-lg font-bold text-blue-400">0</span>
+                    <span class="text-xs text-gray-500">vehicles</span>
+                  </div>
+                </div>
+                <div class="relative">
+                  <input id="north-slider" type="range" min="0" max="100" value="0" class="w-full slider" disabled />
+                  <div id="north-wait" class="text-xs text-gray-500 mt-1">Est. time: <span class="text-blue-400 font-semibold">--</span></div>
+                </div>
+              </div>
+
+              <!-- South -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm font-medium text-gray-300">South</span>
+                  <div class="flex items-center gap-2">
+                    <span id="south-value" class="text-lg font-bold text-blue-400">0</span>
+                    <span class="text-xs text-gray-500">vehicles</span>
+                  </div>
+                </div>
+                <div class="relative">
+                  <input id="south-slider" type="range" min="0" max="100" value="0" class="w-full slider" disabled />
+                  <div id="south-wait" class="text-xs text-gray-500 mt-1">Est. time: <span class="text-blue-400 font-semibold">--</span></div>
+                </div>
+              </div>
+
+              <!-- East -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm font-medium text-gray-300">East</span>
+                  <div class="flex items-center gap-2">
+                    <span id="east-value" class="text-lg font-bold text-blue-400">0</span>
+                    <span class="text-xs text-gray-500">vehicles</span>
+                  </div>
+                </div>
+                <div class="relative">
+                  <input id="east-slider" type="range" min="0" max="100" value="0" class="w-full slider" disabled />
+                  <div id="east-wait" class="text-xs text-gray-500 mt-1">Est. time: <span class="text-blue-400 font-semibold">--</span></div>
+                </div>
+              </div>
+
+              <!-- West -->
+              <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm font-medium text-gray-300">West</span>
+                  <div class="flex items-center gap-2">
+                    <span id="west-value" class="text-lg font-bold text-blue-400">0</span>
+                    <span class="text-xs text-gray-500">vehicles</span>
+                  </div>
+                </div>
+                <div class="relative">
+                  <input id="west-slider" type="range" min="0" max="100" value="0" class="w-full slider" disabled />
+                  <div id="west-wait" class="text-xs text-gray-500 mt-1">Est. time: <span class="text-blue-400 font-semibold">--</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- System Statistics -->
+          <div class="bg-gray-800 rounded-2xl p-6 shadow-2xl border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-blue-300 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 3v18h18"/>
+                <path d="M7 16l4-4 4 4 6-6"/>
+              </svg>
+              Statistics
+            </h2>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <span class="text-sm text-gray-400">Total Vehicles</span>
+                <span id="total-vehicles" class="text-xl font-bold text-cyan-400">0</span>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <span class="text-sm text-gray-400">Cycles Completed</span>
+                <span id="cycle-count" class="text-xl font-bold text-purple-400">0</span>
+              </div>
+              <div class="flex justify-between items-center p-3 bg-gray-700/50 rounded-lg">
+                <span class="text-sm text-gray-400">System Uptime</span>
+                <span id="uptime" class="text-xl font-bold text-green-400">00:00:00</span>
+              </div>              
+            </div>
+          </div>
+
+          <!-- Emergency Override -->
+          <div class="bg-gradient-to-br from-red-900/30 to-orange-900/30 rounded-2xl p-6 shadow-2xl border border-red-700/50">
+            <h2 class="text-xl font-semibold mb-3 text-red-400 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Emergency Controls
+            </h2>
+            <p class="text-xs text-gray-400 mb-4">Override system for emergency vehicles (30s fixed time)</p>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="emergencyOverride('north')" class="emergency-btn">North</button>
+              <button onclick="emergencyOverride('south')" class="emergency-btn">South</button>
+              <button onclick="emergencyOverride('east')" class="emergency-btn">East</button>
+              <button onclick="emergencyOverride('west')" class="emergency-btn">West</button>
+            </div>
+            <button onclick="resetSystem()" class="w-full mt-3 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm font-medium">
+              Reset System
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Logs -->
+      <div class="mt-6 bg-gray-800 rounded-2xl p-6 shadow-2xl border border-gray-700">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold text-blue-300 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3h18v18H3z"/>
+              <path d="M3 9h18"/>
+              <path d="M9 21V9"/>
+            </svg>
+            System Logs
+          </h2>
+          <button onclick="clearLogs()" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors">
+            Clear Logs
+          </button>
+        </div>
+        <div id="system-logs" class="bg-gray-900 rounded-lg p-4 h-40 overflow-y-auto font-mono text-xs text-gray-400 space-y-1">
+          <div class="text-green-400">[SYSTEM] Initializing traffic control system...</div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
