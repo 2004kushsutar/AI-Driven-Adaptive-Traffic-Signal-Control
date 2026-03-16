@@ -20,17 +20,22 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================
 class Config:
-    SNAPSHOT_BEFORE_END = 3000  # Take snapshot 3s before green ends (milliseconds)
-    CONFIDENCE = 0.2            # YOLO confidence threshold
-    APP_PORT = 5000             # Flask server port
-    RESIZE_W = 320              # Frame width for processing
-    RESIZE_H = 240              # Frame height for processing
-    MODEL_PATH = 'yolov8n.pt'   # YOLO model
+    TEST_MODE_IMAGES = False      # Set to False to enable live MP4 mode
+    IMAGE_EXT = '.jpg'           # Extension for static images
+    SNAPSHOT_BEFORE_END = 3000   # Take snapshot 3s before green ends (milliseconds)
+    CONFIDENCE = 0.2             # YOLO confidence threshold
+    APP_PORT = 5000              # Flask server port
+    
+    # AI Processing Resolution (Higher = better detection)
+    RESIZE_W = 320               
+    RESIZE_H = 240               
+    MODEL_PATH = 'yolov8n.pt'    # Upgraded to Medium model for better accuracy
+    
     VIDEO_DIRS = ['north', 'south', 'east', 'west']
     VEHICLE_CLASSES = [1, 2, 3, 5, 7]  # car, motorcycle, bus, truck, train
-    DISPLAY_GRID = True         # Show OpenCV window
-    DEBUG = True                # Enable debug logging
-    EMERGENCY_GREEN_TIME = 30000  # 30s fixed time for emergency override
+    DISPLAY_GRID = True          # Show OpenCV window
+    DEBUG = True                 # Enable debug logging
+    EMERGENCY_GREEN_TIME = 30000 # 30s fixed time for emergency override
 
 config = Config()
 
@@ -53,7 +58,9 @@ class TrafficSystem:
     def __init__(self):
         self.model = None
         self.videos = {}
+        self.images = {}
         self.last_counts = {'north': 0, 'south': 0, 'east': 0, 'west': 0}
+        self.cached_frames = {'north': None, 'south': None, 'east': None, 'west': None}
         self.total_detections = 0
         self.start_time = time.time()
         self.frame_count = 0
@@ -83,21 +90,30 @@ def initialize_system():
         system.log("✅ YOLO Model Loaded Successfully", "SUCCESS")
         
         # Initialize video captures
-        for direction in config.VIDEO_DIRS:
-            video_path = f'{direction}.mp4'
-            
-            if not os.path.exists(video_path):
-                system.log(f"❌ ERROR: {video_path} not found!", "ERROR")
-                system.log(f"Please ensure {video_path} exists in the current directory", "ERROR")
-                return False
-            
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                system.log(f"❌ ERROR: Cannot open {video_path}", "ERROR")
-                return False
-            
-            system.videos[direction] = cap
-            system.log(f"✅ Loaded {video_path}", "SUCCESS")
+        if config.TEST_MODE_IMAGES:
+            for direction in config.VIDEO_DIRS:
+                image_path = os.path.join('imagesCap', f'{direction}{config.IMAGE_EXT}')
+                if not os.path.exists(image_path):
+                    system.log(f"❌ ERROR: {image_path} not found!", "ERROR")
+                    return False
+                system.images[direction] = cv2.imread(image_path)
+                system.log(f"✅ Loaded {image_path}", "SUCCESS")
+        else:
+            for direction in config.VIDEO_DIRS:
+                video_path = os.path.join('videoCap', f'{direction}.mp4')
+                
+                if not os.path.exists(video_path):
+                    system.log(f"❌ ERROR: {video_path} not found!", "ERROR")
+                    system.log(f"Please ensure {video_path} exists in the current directory", "ERROR")
+                    return False
+                
+                cap = cv2.VideoCapture(video_path)
+                if not cap.isOpened():
+                    system.log(f"❌ ERROR: Cannot open {video_path}", "ERROR")
+                    return False
+                
+                system.videos[direction] = cap
+                system.log(f"✅ Loaded {video_path}", "SUCCESS")
         
         system.log("System Initialization Complete", "SUCCESS")
         return True
@@ -109,8 +125,12 @@ def initialize_system():
 # ============================================
 # VIDEO PROCESSING
 # ============================================
-def get_frame(cap):
+def get_frame(source_key):
     """Read and resize frame, handle video looping"""
+    if config.TEST_MODE_IMAGES:
+        return cv2.resize(system.images[source_key].copy(), (config.RESIZE_W, config.RESIZE_H))
+    
+    cap = system.videos.get(source_key)
     success, frame = cap.read()
     
     if not success:
@@ -174,19 +194,17 @@ def take_snapshot_for_direction(direction):
     try:
         system.log(f"📸 Taking snapshot for {direction.upper()}...", "INFO")
         
-        # Get current frame for the direction
-        cap = system.videos.get(direction)
-        if not cap:
-            system.log(f"Video capture not found for {direction}", "ERROR")
-            return 0
-        
-        frame = get_frame(cap)
+        # Get current frame for the direction (Works for both images and video)
+        frame = get_frame(direction)
         if frame is None:
             system.log(f"Failed to get frame for {direction}", "ERROR")
             return 0
         
         # Run AI detection
         count, detections = detect_vehicles(frame)
+        
+        # Draw and cache the labeled frame
+        system.cached_frames[direction] = draw_detections(frame.copy(), detections, count, direction)
         
         # Update the count for this direction
         system.last_counts[direction] = count
@@ -226,14 +244,20 @@ def traffic_monitor():
                 })
                 system.log(f"📤 Sent snapshot result for {direction}: {count} vehicles", "INFO")
             
-            # 2. Read frames for display only (no AI processing here)
+            # 2. Read frames for display
             frames = {}
             for direction in config.VIDEO_DIRS:
-                frame = get_frame(system.videos[direction])
+                # 1. Use cached image if in TEST_MODE and it exists
+                if config.TEST_MODE_IMAGES and system.cached_frames[direction] is not None:
+                    frames[direction] = system.cached_frames[direction]
+                    continue
+                
+                # 2. Get the current video or image frame
+                frame = get_frame(direction)
                 if frame is None:
                     continue
                 
-                # Draw with last known counts
+                # 3. DO NOT run detect_vehicles here! Just draw the LAST KNOWN count.
                 count = system.last_counts[direction]
                 frames[direction] = draw_detections(frame, None, count, direction)
             
@@ -262,7 +286,15 @@ def traffic_monitor():
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 165, 0), 1)
                 
                 final_view = np.vstack((info_panel, grid_view))
-                cv2.imshow("🚦 Traffic Control System - Predictive Mode", final_view)
+                
+                # --- Scale down the window for display ---
+                display_scale = 0.8  # 80% of original size
+                scaled_width = int(final_view.shape[1] * display_scale)
+                scaled_height = int(final_view.shape[0] * display_scale)
+                scaled_view = cv2.resize(final_view, (scaled_width, scaled_height))
+                
+                # Show the scaled view
+                cv2.imshow("🚦 Traffic Control System - Predictive Mode", scaled_view)
             
             # 4. Frame rate control
             frame_counter += 1

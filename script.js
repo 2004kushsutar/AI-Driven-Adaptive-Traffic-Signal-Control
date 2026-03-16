@@ -38,7 +38,8 @@ document.addEventListener("DOMContentLoaded", () => {
     nextDirectionCount: 0,
     nextDirectionGreenTime: 0, // Store calculated green time from backend
     waitingForSnapshot: false,
-    isFirstCycle: true
+    isFirstCycle: true,
+    idleMode: false
   };
 
   // ============================================
@@ -100,18 +101,18 @@ document.addEventListener("DOMContentLoaded", () => {
       const direction = data.direction;
       const count = data.count;
       const greenTimeMs = data.green_time_ms || calculateSmartTime(count);
-      
-      console.log(`📸 Snapshot Result: ${direction} = ${count} vehicles, ${greenTimeMs/1000}s green time`);
-      
+
+      console.log(`📸 Snapshot Result: ${direction} = ${count} vehicles, ${greenTimeMs / 1000}s green time`);
+
       // Update the count and calculated green time for this direction
       state.realCarCounts[direction] = count;
       state.nextDirectionCount = count;
       state.nextDirectionGreenTime = greenTimeMs;
       state.waitingForSnapshot = false;
-      
+
       updateInterface();
       addLog(`Snapshot complete: ${direction.toUpperCase()} has ${count} vehicles`, "success");
-      addLog(`Calculated green time: ${(greenTimeMs/1000).toFixed(1)}s (vehicle type-based)`, "info");
+      addLog(`Calculated green time: ${(greenTimeMs / 1000).toFixed(1)}s (vehicle type-based)`, "info");
     });
   }
 
@@ -174,8 +175,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const elColor = lightEl.dataset && lightEl.dataset.color
         ? lightEl.dataset.color
         : (lightEl.classList.contains("red") ? "red" :
-           lightEl.classList.contains("yellow") ? "yellow" :
-           lightEl.classList.contains("green") ? "green" : null);
+          lightEl.classList.contains("yellow") ? "yellow" :
+            lightEl.classList.contains("green") ? "green" : null);
 
       if (!elColor) {
         lightEl.classList.remove("active");
@@ -262,6 +263,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (el) el.style.display = "none";
     }
 
+    // Force hide all timers if we are in idle state
+    if (state.idleMode) return;
+
     // Show countdown for active directions (green/yellow)
     directions.forEach((dir) => {
       const el = elements.timerDisplays[dir];
@@ -275,7 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const nextEl = elements.timerDisplays[nextDir];
     if (nextEl) {
       let totalWaitSeconds = 0;
-      
+
       if (state.phase === "green") {
         // During green: show remaining green + yellow + all red
         totalWaitSeconds = Math.ceil((remainingMs + CONFIG.YELLOW_TIME + CONFIG.ALL_RED_TIME) / 1000);
@@ -286,7 +290,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // During all-red: show remaining all red
         totalWaitSeconds = Math.ceil(remainingMs / 1000);
       }
-      
+
       if (totalWaitSeconds > 0) {
         nextEl.style.display = "block";
         nextEl.textContent = totalWaitSeconds;
@@ -295,9 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getActiveDirections() {
-    if (state.emergencyMode && state.emergencyDirection) {
-      return [state.emergencyDirection];
-    }
+    // BUG FIX: Removed the immediate hijack so transitions can complete gracefully
     if (state.currentCycleIndex === -1) {
       return ["north"];
     }
@@ -311,19 +313,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function requestSnapshotForNextDirection() {
     if (state.waitingForSnapshot) return;
-    
+
     const nextDir = getNextDirection();
-    
+
+    // Prevent snapshots if idle
+    if (state.idleMode) return;
+
     addLog(`🎯 Requesting predictive snapshot for ${nextDir.toUpperCase()}`, "info");
-    
+
     state.waitingForSnapshot = true;
-    
+
     // Send snapshot request to backend
     socket.emit('request_snapshot', { direction: nextDir });
   }
 
   function switchCycle() {
-    state.currentCycleIndex = (state.currentCycleIndex + 1) % CONFIG.CYCLE_ORDER.length;
+    // BUG FIX: Dynamically target emergency road if flag is set, otherwise cycle normally
+    if (state.emergencyMode && state.emergencyDirection) {
+      state.currentCycleIndex = CONFIG.CYCLE_ORDER.indexOf(state.emergencyDirection);
+      state.emergencyDirection = null; // Clear queue so we don't loop endlessly
+    } else {
+      state.currentCycleIndex = (state.currentCycleIndex + 1) % CONFIG.CYCLE_ORDER.length;
+    }
 
     if (state.currentCycleIndex === 0) {
       state.totalCyclesCompleted++;
@@ -337,24 +348,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let carCount;
     let greenTime;
-    
+
     if (state.isFirstCycle) {
       // First cycle: use default time
       greenTime = CONFIG.DEFAULT_FIRST_GREEN;
       carCount = state.realCarCounts[activeDir] || 0;
       state.isFirstCycle = false;
-      addLog(`First cycle: Using default ${CONFIG.DEFAULT_FIRST_GREEN/1000}s for ${activeDir.toUpperCase()}`, "info");
+      addLog(`First cycle: Using default ${CONFIG.DEFAULT_FIRST_GREEN / 1000}s for ${activeDir.toUpperCase()}`, "info");
     } else if (state.emergencyMode) {
       // Emergency mode: use fixed time
       greenTime = CONFIG.EMERGENCY_GREEN_TIME;
       carCount = state.realCarCounts[activeDir] || 0;
-      addLog(`Emergency mode: ${CONFIG.EMERGENCY_GREEN_TIME/1000}s for ${activeDir.toUpperCase()}`, "warning");
+      addLog(`Emergency mode: ${CONFIG.EMERGENCY_GREEN_TIME / 1000}s for ${activeDir.toUpperCase()}`, "warning");
+    } else if (state.idleMode) {
+      // Logic inside mainLoop prevents phase progression
+      addLog(`System is in Manual Idle Mode.`, "info");
+      return;
     } else {
       // Normal mode: use backend-calculated green time
       carCount = state.nextDirectionCount;
       greenTime = state.nextDirectionGreenTime || calculateSmartTime(carCount);
       addLog(`Using predictive count: ${carCount} vehicles for ${activeDir.toUpperCase()}`, "success");
-      addLog(`Backend calculated green time: ${(greenTime/1000).toFixed(1)}s`, "info");
+      addLog(`Backend calculated green time: ${(greenTime / 1000).toFixed(1)}s`, "info");
     }
 
     state.phaseDuration = greenTime;
@@ -365,7 +380,7 @@ document.addEventListener("DOMContentLoaded", () => {
       elements.currentPhase.className = "px-3 py-1 bg-green-500/20 text-green-400 rounded-lg text-sm font-medium";
     }
 
-    addLog(`🟢 Green signal for ${activeDir.toUpperCase()} (${carCount} vehicles, ${Math.round(greenTime/1000)}s)`, "success");
+    addLog(`🟢 Green signal for ${activeDir.toUpperCase()} (${carCount} vehicles, ${Math.round(greenTime / 1000)}s)`, "success");
 
     updateLights();
   }
@@ -393,6 +408,19 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.currentPhase.textContent = "ALL RED";
         elements.currentPhase.className = "px-3 py-1 bg-red-500/20 text-red-400 rounded-lg text-sm font-medium";
       }
+    } else if (state.idleMode) {
+      document.querySelector('.relative.w-full.aspect-square').classList.add('idle-mode');
+
+      // Keep them technically "yellow" internally
+      state.currentLights["north"] = "yellow";
+      state.currentLights["south"] = "yellow";
+      state.currentLights["east"] = "yellow";
+      state.currentLights["west"] = "yellow";
+
+      if (elements.currentPhase) {
+        elements.currentPhase.textContent = "IDLE - FLASHING YELLOW";
+        elements.currentPhase.className = "px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-lg text-sm font-medium";
+      }
     }
   }
 
@@ -407,7 +435,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Check if we should take predictive snapshot
     if (state.phase === "green" && !state.snapshotTaken && !state.emergencyMode) {
       const timeUntilEnd = state.phaseDuration - elapsed;
-      
+
       if (timeUntilEnd <= CONFIG.SNAPSHOT_BEFORE_END && timeUntilEnd > 0) {
         state.snapshotTaken = true;
         requestSnapshotForNextDirection();
@@ -415,6 +443,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (state.phase === "green" && elapsed >= state.phaseDuration) {
+      // BUG FIX: Clean up emergency mode safely ONLY after the emergency green light finishes
+      if (state.emergencyMode && state.emergencyDirection === null) {
+        state.emergencyMode = false;
+        addLog("Emergency override completed", "success");
+      }
       state.phase = "yellow";
       state.phaseDuration = CONFIG.YELLOW_TIME;
       state.cycleStartTime = now;
@@ -427,12 +460,14 @@ document.addEventListener("DOMContentLoaded", () => {
       addLog(`🔴 All red clearance phase`, "info");
       updateLights();
     } else if (state.phase === "red" && elapsed >= state.phaseDuration) {
-      if (state.emergencyMode) {
-        state.emergencyMode = false;
-        state.emergencyDirection = null;
-        addLog("Emergency override completed", "success");
-      }
       switchCycle();
+    }
+
+    // --- IDLE LOGIC ---
+    if (state.idleMode) {
+      updateLights();
+      updateUptime();
+      return requestAnimationFrame(mainLoop);
     }
 
     const remaining = Math.max(0, state.phaseDuration - elapsed);
@@ -466,7 +501,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let colorClass = "text-gray-400";
     let icon = "ℹ️";
 
-    switch(type) {
+    switch (type) {
       case "success":
         colorClass = "text-green-400";
         icon = "✅";
@@ -500,7 +535,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================
   // 8. EMERGENCY CONTROLS
   // ============================================
-  window.emergencyOverride = function(direction) {
+  window.emergencyOverride = function (direction) {
     if (!["north", "south", "east", "west"].includes(direction)) {
       addLog("Invalid direction for emergency override", "error");
       return;
@@ -508,16 +543,54 @@ document.addEventListener("DOMContentLoaded", () => {
 
     state.emergencyMode = true;
     state.emergencyDirection = direction;
-    state.phase = "yellow";
-    state.phaseDuration = CONFIG.YELLOW_TIME;
-    state.cycleStartTime = Date.now();
 
-    addLog(`🚨 EMERGENCY OVERRIDE: ${direction.toUpperCase()} direction`, "error");
+    addLog(`🚨 EMERGENCY OVERRIDE: ${direction.toUpperCase()} queued`, "error");
 
-    updateLights();
+    // BUG FIX: Gracefully shut down the current green light so we transition through yellow safely
+    if (state.phase === "green") {
+      state.phaseDuration = 0;
+    }
+    // Note: Manual updateLights() call removed, so the loop naturally handles the state transition.
   };
 
-  window.resetSystem = function() {
+  window.toggleIdleMode = function () {
+    state.idleMode = !state.idleMode;
+
+    if (state.idleMode) {
+      addLog("Manual Idle Mode activated. All signals blinking yellow.", "warning");
+
+      // Force all timers to display 0 immediately
+      state.phaseDuration = 0;
+      state.cycleStartTime = Date.now();
+      showCountdown(['north', 'south', 'east', 'west'], 0);
+
+      // Just visually update the DOM once, the CSS animation takes over entirely
+      updateLights();
+
+      // Force UI sync
+      ['north', 'south', 'east', 'west'].forEach(dir => {
+        const lights = elements.lights[dir];
+        if (lights) {
+          lights.forEach(l => {
+            if (l.dataset.color === 'yellow') l.classList.add('active');
+            else l.classList.remove('active');
+          })
+        }
+      });
+
+    } else {
+      addLog("Manual Idle Mode deactivated. Resuming normal operations.", "success");
+      document.querySelector('.relative.w-full.aspect-square').classList.remove('idle-mode');
+
+      // Make sure the next assigned cycle gets treated as a fresh start (15s default green)
+      state.isFirstCycle = true;
+      state.currentCycleIndex = -1; // Reset to start at north
+
+      switchCycle(); // Boot back up
+    }
+  };
+
+  window.resetSystem = function () {
     if (confirm("Are you sure you want to reset the system?")) {
       state.emergencyMode = false;
       state.emergencyDirection = null;
@@ -528,7 +601,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.isFirstCycle = true;
 
       addLog("System reset initiated", "warning");
-      
+
       // Request initial snapshot for first direction
       setTimeout(() => {
         requestSnapshotForNextDirection();
@@ -539,7 +612,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  window.clearLogs = function() {
+  window.clearLogs = function () {
     if (!elements.systemLogs) return;
     elements.systemLogs.innerHTML = '<div class="text-green-400">[SYSTEM] Logs cleared</div>';
   };
@@ -557,16 +630,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     addLog("Initializing traffic control system...", "info");
     addLog("Mode: Predictive Snapshot with Vehicle Type-Based Timing", "success");
-    
+
     setTimeout(() => {
       updateInterface();
       state.phase = "initializing";
-      
+
       // Request initial snapshot for first direction (North)
       addLog("Taking initial snapshot for first cycle...", "info");
       socket.emit('request_snapshot', { direction: 'north' });
       state.waitingForSnapshot = true;
-      
+
       // Wait for snapshot, then start
       setTimeout(() => {
         if (state.nextDirectionCount === 0) {
