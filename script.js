@@ -7,8 +7,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // ============================================
   // 1. CONFIGURATION
   // ============================================
+  const isLocalFile = window.location.protocol === "file:";
+  const backendIP = isLocalFile ? "127.0.0.1" : window.location.hostname;
+  const backendProtocol = isLocalFile ? "http:" : window.location.protocol;
+
   const CONFIG = {
-    SOCKET_URL: `${window.location.protocol}//${window.location.hostname}:5000`,
+    SOCKET_URL: `${backendProtocol}//${backendIP}:5000`,
     YELLOW_TIME: 3000,
     ALL_RED_TIME: 2000,
     CYCLE_ORDER: ["north", "east", "south", "west"],
@@ -336,6 +340,9 @@ document.addEventListener("DOMContentLoaded", () => {
       state.currentCycleIndex = (state.currentCycleIndex + 1) % CONFIG.CYCLE_ORDER.length;
     }
 
+    // NEW BUG FIX: Prevent snapshot requests from getting permanently stuck
+    state.waitingForSnapshot = false;
+
     if (state.currentCycleIndex === 0) {
       state.totalCyclesCompleted++;
       if (elements.cycleCount) elements.cycleCount.textContent = state.totalCyclesCompleted;
@@ -365,11 +372,11 @@ document.addEventListener("DOMContentLoaded", () => {
       addLog(`System is in Manual Idle Mode.`, "info");
       return;
     } else {
-      // Normal mode: use backend-calculated green time
-      carCount = state.nextDirectionCount;
-      greenTime = state.nextDirectionGreenTime || calculateSmartTime(carCount);
+      // NEW BUG FIX: Normal mode directly reads the dictionary count for the specific active direction
+      carCount = state.realCarCounts[activeDir] || 0;
+      greenTime = calculateSmartTime(carCount); // Calculate fresh based on the actual count
       addLog(`Using predictive count: ${carCount} vehicles for ${activeDir.toUpperCase()}`, "success");
-      addLog(`Backend calculated green time: ${(greenTime / 1000).toFixed(1)}s`, "info");
+      addLog(`Calculated green time: ${(greenTime / 1000).toFixed(1)}s`, "info");
     }
 
     state.phaseDuration = greenTime;

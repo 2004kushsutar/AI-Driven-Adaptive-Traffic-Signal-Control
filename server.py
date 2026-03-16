@@ -20,7 +20,7 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================
 class Config:
-    TEST_MODE_IMAGES = False      # Set to False to enable live MP4 mode
+    TEST_MODE_IMAGES = True      # Set to False to enable live MP4 mode
     IMAGE_EXT = '.jpg'           # Extension for static images
     SNAPSHOT_BEFORE_END = 3000   # Take snapshot 3s before green ends (milliseconds)
     CONFIDENCE = 0.2             # YOLO confidence threshold
