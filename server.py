@@ -20,7 +20,7 @@ from datetime import datetime
 # CONFIGURATION
 # ============================================
 class Config:
-    TEST_MODE_IMAGES = True      # Set to False to enable live MP4 mode
+    TEST_MODE_IMAGES = False     # Set to False to enable live MP4 mode
     IMAGE_EXT = '.jpg'           # Extension for static images
     SNAPSHOT_BEFORE_END = 3000   # Take snapshot 3s before green ends (milliseconds)
     CONFIDENCE = 0.2             # YOLO confidence threshold
@@ -33,7 +33,7 @@ class Config:
     
     VIDEO_DIRS = ['north', 'south', 'east', 'west']
     VEHICLE_CLASSES = [1, 2, 3, 5, 7]  # car, motorcycle, bus, truck, train
-    DISPLAY_GRID = True          # Show OpenCV window
+    DISPLAY_GRID = False          # Show OpenCV window
     DEBUG = True                 # Enable debug logging
     EMERGENCY_GREEN_TIME = 30000 # 30s fixed time for emergency override
 
